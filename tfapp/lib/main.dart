@@ -6,7 +6,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:flutter/services.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:home_widget/home_widget.dart';
 
 void main() {
   runApp(const TimeFlowApp());
@@ -98,7 +100,80 @@ Future<void> initNotifications() async {
   _notificationsEnabled = granted;
 }
 
-Future<void> scheduleClassNotifications(List<Course> courses, DateTime semesterStart) async {
+Future<void> sendTestNotification() async {
+  const androidDetails = AndroidNotificationDetails(
+    'class_reminder', '上课提醒',
+    channelDescription: '提前30分钟提醒上课',
+    importance: Importance.high,
+    priority: Priority.high,
+    playSound: true,
+  );
+  const details = NotificationDetails(android: androidDetails);
+  await _notificationsPlugin.show(
+    9999,
+    '光流 TimeFlow',
+    '光流会这样通知你',
+    details,
+  );
+}
+
+Future<void> updateHomeWidget(List<Course> courses, DateTime? semesterStart) async {
+  final now = DateTime.now();
+  final todayDow = now.weekday; // 1=周一..7=周日
+  final tomorrowDow = todayDow % 7 + 1;
+
+  // 计算当前周次
+  int week = 1;
+  if (semesterStart != null) {
+    final diff = now.difference(semesterStart).inDays;
+    week = (diff / 7).floor() + 1;
+    if (week < 1) week = 1;
+  }
+
+  List<Map<String, String>> getCoursesForDay(int dow, {bool filterPast = false}) {
+    final dayCourses = courses.where((c) {
+      if (c.dayOfWeek != dow) return false;
+      if (c.weekList.isEmpty) return true;
+      if (semesterStart == null) return true;
+      return c.weekList.contains(week);
+    }).toList();
+    dayCourses.sort((a, b) => a.startPeriod.compareTo(b.startPeriod));
+
+    final result = <Map<String, String>>[];
+    for (final c in dayCourses) {
+      final endP = periods.firstWhere((p) => p.number == c.startPeriod + c.spanPeriods - 1);
+      // 今天过滤：课程结束时间已过则跳过
+      if (filterPast) {
+        final parts = endP.currentEnd.split(':');
+        final courseEnd = DateTime(now.year, now.month, now.day,
+            int.parse(parts[0]), int.parse(parts[1]));
+        if (courseEnd.isBefore(now)) continue;
+      }
+      final startP = periods.firstWhere((p) => p.number == c.startPeriod);
+      result.add({
+        'name': c.name,
+        'room': c.room,
+        'time': '${startP.currentStart} - ${endP.currentEnd}',
+        'color': c.color.value.toRadixString(16).padLeft(8, '0'),
+      });
+      if (result.length >= 2) break; // 最多2节
+    }
+    return result;
+  }
+
+  final todayCourses = getCoursesForDay(todayDow, filterPast: true);
+  final tomorrowCourses = getCoursesForDay(tomorrowDow);
+
+  await HomeWidget.saveWidgetData('widget_today', jsonEncode(todayCourses));
+  await HomeWidget.saveWidgetData('widget_tomorrow', jsonEncode(tomorrowCourses));
+  await HomeWidget.saveWidgetData('widget_week', week);
+  await HomeWidget.updateWidget(
+    androidName: 'TimeFlowWidgetProvider',
+    qualifiedAndroidName: 'com.example.tfapp.TimeFlowWidgetProvider',
+  );
+}
+
+Future<void> scheduleClassNotifications(List<Course> courses, DateTime semesterStart, {int? currentWeek}) async {
   if (!_notificationsEnabled) return;
   // 取消所有旧通知
   await _notificationsPlugin.cancelAll();
@@ -114,9 +189,10 @@ Future<void> scheduleClassNotifications(List<Course> courses, DateTime semesterS
 
   int id = 0;
   // 安排未来4周的通知
+  final baseWeek = currentWeek ?? _currentWeek;
   for (int weekOffset = 0; weekOffset < 4; weekOffset++) {
-    final weekStart = semesterStart.add(Duration(days: ((_currentWeek - 1 + weekOffset) * 7)));
-    final weekNum = _currentWeek + weekOffset;
+    final weekStart = semesterStart.add(Duration(days: ((baseWeek - 1 + weekOffset) * 7)));
+    final weekNum = baseWeek + weekOffset;
     for (final course in courses) {
       if (course.weekList.isNotEmpty && !course.weekList.contains(weekNum)) continue;
       // 找到这节课在本周的日期
@@ -131,11 +207,11 @@ Future<void> scheduleClassNotifications(List<Course> courses, DateTime semesterS
       if (notifyTime.isAfter(now)) {
         await _notificationsPlugin.zonedSchedule(
           id++,
-          '📚 ${course.name}',
+          '${course.name} - 光流 TimeFlow',
           '30分钟后开始 · ${period.currentStart} · ${course.room}',
           tz.TZDateTime.from(notifyTime, tz.local),
           details,
-          androidScheduleMode: AndroidScheduleMode.alarmClock,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
         );
@@ -363,14 +439,32 @@ class SchedulePage extends StatefulWidget {
   State<SchedulePage> createState() => _SchedulePageState();
 }
 
-class _SchedulePageState extends State<SchedulePage> {
+class _SchedulePageState extends State<SchedulePage> with WidgetsBindingObserver {
   int _week = 1;
+  late PageController _pageController;
   List<Course> _courses = [];
   bool _loading = true;
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_semesterStart != null) {
+        final now = DateTime.now();
+        final diff = now.difference(_semesterStart!).inDays;
+        final w = (diff / 7).floor() + 1;
+        if (w >= 1 && w <= 20) {
+          if (_pageController.hasClients) _pageController.jumpToPage(w - 1);
+          setState(() => _week = w);
+        }
+      }
+      updateHomeWidget(_courses, _semesterStart);
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCourses();
     // 计算当前周次（简单：从3月3日算第1周）
     if (_semesterStart != null) {
@@ -380,6 +474,14 @@ class _SchedulePageState extends State<SchedulePage> {
       if (_week < 1) _week = 1;
       if (_week > 20) _week = 20;
     }
+    _pageController = PageController(initialPage: _week - 1);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCourses() async {
@@ -387,16 +489,30 @@ class _SchedulePageState extends State<SchedulePage> {
   await initNotifications();
     await loadSemesterStart();
     final courses = await ScheduleStore.load();
-    setState(() { _courses = courses; _loading = false; });
-    _currentWeek = _week;
+    if (_semesterStart != null) {
+      final now = DateTime.now();
+      final diff = now.difference(_semesterStart!).inDays;
+      final w = ((diff / 7).floor() + 1).clamp(1, 20);
+      _currentWeek = w;
+      setState(() { _courses = courses; _loading = false; _week = w; });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) _pageController.jumpToPage(w - 1);
+      });
+    } else {
+      setState(() { _courses = courses; _loading = false; });
+    }
     if (_semesterStart != null) {
       scheduleClassNotifications(courses, _semesterStart!);
     }
+    // 每次启动都更新小组件
+    await updateHomeWidget(courses, _semesterStart);
   }
 
   Future<void> _saveCourses(List<Course> courses) async {
     await ScheduleStore.save(courses);
     setState(() => _courses = courses);
+    // 更新桌面小组件
+    await updateHomeWidget(courses, _semesterStart);
   }
 
   int get _todayDow => DateTime.now().weekday; // 保留但不再用于高亮判断
@@ -428,12 +544,14 @@ class _SchedulePageState extends State<SchedulePage> {
           setState(() {});
           if (_semesterStart != null) {
             _currentWeek = _week;
-            scheduleClassNotifications(_courses, _semesterStart!);
+            scheduleClassNotifications(_courses, _semesterStart!, currentWeek: _week);
           }
+          updateHomeWidget(_courses, _semesterStart);
         },
         onDelete: () async {
           await ScheduleStore.clear();
           setState(() => _courses = []);
+          await updateHomeWidget([], _semesterStart);
           if (mounted) Navigator.pop(context);
         },
       ),
@@ -450,28 +568,23 @@ class _SchedulePageState extends State<SchedulePage> {
           : Column(
               children: [
                 _TopBar(week: _week,
-                  onPrev: () => setState(() => _week = (_week - 1).clamp(1, 20)),
-                  onNext: () => setState(() => _week = (_week + 1).clamp(1, 20)),
-                  onThisWeek: () { if (_semesterStart != null) { final now = DateTime.now(); setState(() => _week = ((now.difference(_semesterStart!).inDays/7).floor()+1).clamp(1,20)); } },
+                  onPrev: () { final w = (_week - 1).clamp(1, 20); _pageController.animateToPage(w - 1, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut); },
+                  onNext: () { final w = (_week + 1).clamp(1, 20); _pageController.animateToPage(w - 1, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut); },
+                  onThisWeek: () { if (_semesterStart != null) { final now = DateTime.now(); final w = ((now.difference(_semesterStart!).inDays/7).floor()+1).clamp(1,20); _pageController.animateToPage(w - 1, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut); } },
                   onImport: _openImport,
                   onSettings: _openSettings,
+                  onLogoTap: () => sendTestNotification(),
                 ),
                 _StatsBar(courses: _courses, week: _week),
                 Expanded(
                   child: _courses.isEmpty
                     ? _EmptyState(onImport: _openImport)
-                    : GestureDetector(
-                        onHorizontalDragEnd: (details) {
-                          if (details.primaryVelocity == null) return;
-                          if (details.primaryVelocity! < -300) {
-                            // 向左滑 → 下一周
-                            setState(() => _week = (_week + 1).clamp(1, 20));
-                          } else if (details.primaryVelocity! > 300) {
-                            // 向右滑 → 上一周
-                            setState(() => _week = (_week - 1).clamp(1, 20));
-                          }
-                        },
-                        child: _ScheduleGrid(courses: _courses, todayDow: _todayDow, week: _week, semesterStart: _semesterStart),
+                    : _ScheduleLayout(
+                        courses: _courses,
+                        todayDow: _todayDow,
+                        semesterStart: _semesterStart,
+                        pageController: _pageController,
+                        onPageChanged: (page) => setState(() => _week = page + 1),
                       ),
                 ),
               ],
@@ -519,9 +632,9 @@ class _EmptyState extends StatelessWidget {
 // ═══════════════════════════════════════════
 class _TopBar extends StatelessWidget {
   final int week;
-  final VoidCallback onPrev, onNext, onThisWeek, onImport, onSettings;
+  final VoidCallback onPrev, onNext, onThisWeek, onImport, onSettings, onLogoTap;
   const _TopBar({required this.week, required this.onPrev, required this.onNext,
-    required this.onThisWeek, required this.onImport, required this.onSettings});
+    required this.onThisWeek, required this.onImport, required this.onSettings, required this.onLogoTap});
 
   @override
   Widget build(BuildContext context) {
@@ -533,9 +646,14 @@ class _TopBar extends StatelessWidget {
       ),
       child: Column(children: [
         Row(children: [
-          SvgPicture.asset('assets/logo.svg', width: 26, height: 26),
-          const SizedBox(width: 7),
-          const Text('光流 TimeFlow', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.text, letterSpacing: 0.5)),
+          GestureDetector(
+            onTap: onLogoTap,
+            child: Row(children: [
+              SvgPicture.asset('assets/logo.svg', width: 26, height: 26),
+              const SizedBox(width: 7),
+              const Text('光流 TimeFlow', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: C.text, letterSpacing: 0.5)),
+            ]),
+          ),
           const Spacer(),
           GestureDetector(
             onTap: onImport,
@@ -630,24 +748,137 @@ class _StatsBar extends StatelessWidget {
 // ═══════════════════════════════════════════
 //  课程网格
 // ═══════════════════════════════════════════
-class _ScheduleGrid extends StatelessWidget {
+// ═══════════════════════════════════════════
+//  课程表布局（固定时间列 + PageView课程格）
+// ═══════════════════════════════════════════
+class _ScheduleLayout extends StatelessWidget {
   final List<Course> courses;
   final int todayDow;
-  final int week;
-
   final DateTime? semesterStart;
-  const _ScheduleGrid({required this.courses, required this.todayDow, required this.week, required this.semesterStart});
+  final PageController pageController;
+  final ValueChanged<int> onPageChanged;
+
+  const _ScheduleLayout({
+    required this.courses,
+    required this.todayDow,
+    required this.semesterStart,
+    required this.pageController,
+    required this.onPageChanged,
+  });
 
   static const double timeColW = 48.0;
   static const Set<int> dividers = {5, 9};
 
-  // 根据可用高度动态计算格子高度
-  // 12节 + 2个分隔行，分隔行高度 = cellH * 0.35
-  static double calcCellH(double availH) {
-    // availH = 12 * cellH + 2 * divH = 12 * cellH + 2 * cellH * 0.35 = cellH * 12.7
-    return (availH / 12.7).clamp(40.0, 60.0);
+  static double calcCellH(double availH) => (availH / 12.7).clamp(40.0, 60.0);
+  static double divH(double cellH) => cellH * 0.35;
+
+  double periodY(int p, double cellH) {
+    double y = 0;
+    for (final period in periods) {
+      if (period.number == p) return y;
+      y += cellH;
+      if (dividers.contains(period.number)) y += divH(cellH);
+    }
+    return y;
   }
 
+  double totalH(double cellH) {
+    double h = 0;
+    for (final p in periods) { h += cellH; if (dividers.contains(p.number)) h += divH(cellH); }
+    return h;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final availH = constraints.maxHeight - 38;
+      final cellH = calcCellH(availH);
+      final now = DateTime.now();
+
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── 固定时间列 ──
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 时间列表头
+          Container(
+            width: timeColW, height: 38,
+            decoration: const BoxDecoration(
+              color: C.header,
+              border: Border(right: BorderSide(color: C.border), bottom: BorderSide(color: C.border)),
+            ),
+          ),
+          // 时间格子
+          SizedBox(
+            width: timeColW,
+            height: totalH(cellH),
+            child: Stack(children: [
+              Column(children: [
+                for (final p in periods) ...[
+                  Container(height: cellH,
+                    decoration: const BoxDecoration(color: C.surface,
+                      border: Border(right: BorderSide(color: C.border), bottom: BorderSide(color: C.border)))),
+                  if (dividers.contains(p.number))
+                    Container(height: divH(cellH),
+                      decoration: const BoxDecoration(color: C.surface,
+                        border: Border(right: BorderSide(color: C.border), bottom: BorderSide(color: C.border)))),
+                ],
+              ]),
+              for (final p in periods) ...[
+                Positioned(
+                  top: periodY(p.number, cellH), left: 0, right: 1, height: cellH,
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text('${p.number}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: C.muted, height: 1.0)),
+                    Text(p.currentStart, style: const TextStyle(fontSize: 8, color: C.faint, height: 1.3)),
+                    Text(p.currentEnd,   style: const TextStyle(fontSize: 8, color: C.faint, height: 1.3)),
+                  ]),
+                ),
+                if (dividers.contains(p.number))
+                  Positioned(
+                    top: periodY(p.number, cellH) + cellH, left: 0, right: 1, height: divH(cellH),
+                    child: Center(child: Text(p.number == 5 ? '午休' : '傍晚',
+                      style: const TextStyle(fontSize: 8, color: C.faint))),
+                  ),
+              ],
+            ]),
+          ),
+        ]),
+
+        // ── PageView 滑动区域（表头 + 课程格） ──
+        Expanded(
+          child: PageView.builder(
+            controller: pageController,
+            onPageChanged: onPageChanged,
+            itemCount: 20,
+            itemBuilder: (context, index) {
+              final week = index + 1;
+              final weekStart = semesterStart != null
+                  ? semesterStart!.add(Duration(days: (week - 1) * 7))
+                  : now.subtract(Duration(days: now.weekday - 1));
+              return _ScheduleGrid(
+                courses: courses,
+                todayDow: todayDow,
+                week: week,
+                semesterStart: semesterStart,
+                cellH: cellH,
+                weekStart: weekStart,
+              );
+            },
+          ),
+        ),
+      ]);
+    });
+  }
+}
+
+class _ScheduleGrid extends StatelessWidget {
+  final List<Course> courses;
+  final int todayDow;
+  final int week;
+  final DateTime? semesterStart;
+  final double cellH;
+  final DateTime weekStart;
+  const _ScheduleGrid({required this.courses, required this.todayDow, required this.week, required this.semesterStart, required this.cellH, required this.weekStart});
+
+  static const Set<int> dividers = {5, 9};
   static double divH(double cellH) => cellH * 0.35;
 
   double periodY(int p, double cellH) {
@@ -680,19 +911,9 @@ class _ScheduleGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    // weekStart = 第week周的第一天（即开学日 + (week-1)*7天）
-    final weekStart = semesterStart != null
-        ? semesterStart!.add(Duration(days: (week - 1) * 7))
-        : now.subtract(Duration(days: now.weekday - 1));
-    return LayoutBuilder(builder: (context, constraints) {
-      final availH = constraints.maxHeight - 38; // 减去表头行高度
-      final cellH = calcCellH(availH);
-      return Column(children: [
-        // 表头
+    return Column(children: [
+        // 表头（只含7天，不含时间列）
         Row(children: [
-          Container(width: timeColW, height: 38,
-            decoration: const BoxDecoration(color: C.header,
-              border: Border(right: BorderSide(color: C.border), bottom: BorderSide(color: C.border)))),
           ...List.generate(7, (i) {
             final isToday = weekStart.add(Duration(days: i)).day == now.day &&
               weekStart.add(Duration(days: i)).month == now.month &&
@@ -712,40 +933,8 @@ class _ScheduleGrid extends StatelessWidget {
             ));
           }),
         ]),
-        // 网格主体
-        Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 时间列：Stack绝对定位，文字不影响格子高度
-          SizedBox(width: timeColW, child: Stack(children: [
-            Column(children: [
-              for (final p in periods) ...[
-                Container(height: cellH,
-                  decoration: const BoxDecoration(color: C.surface,
-                    border: Border(right: BorderSide(color: C.border), bottom: BorderSide(color: C.border)))),
-                if (dividers.contains(p.number))
-                  Container(height: divH(cellH),
-                    decoration: const BoxDecoration(color: C.surface,
-                      border: Border(right: BorderSide(color: C.border), bottom: BorderSide(color: C.border)))),
-              ],
-            ]),
-            for (final p in periods) ...[
-              Positioned(
-                top: periodY(p.number, cellH), left: 0, right: 1, height: cellH,
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text('${p.number}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: C.muted, height: 1.0)),
-                  Text(p.currentStart, style: const TextStyle(fontSize: 8, color: C.faint, height: 1.3)),
-                  Text(p.currentEnd,   style: const TextStyle(fontSize: 8, color: C.faint, height: 1.3)),
-                ]),
-              ),
-              if (dividers.contains(p.number))
-                Positioned(
-                  top: periodY(p.number, cellH) + cellH, left: 0, right: 1, height: divH(cellH),
-                  child: Center(child: Text(p.number == 5 ? '午休' : '傍晚',
-                    style: const TextStyle(fontSize: 8, color: C.faint))),
-                ),
-            ],
-          ])),
-          // 7天列
-          Expanded(child: Stack(children: [
+        // 网格主体（只含7天列，时间列已在外部固定）
+        Expanded(child: Stack(children: [
             // 背景
             Row(children: List.generate(7, (i) {
               final isToday = weekStart.add(Duration(days: i)).day == now.day &&
@@ -825,9 +1014,7 @@ class _ScheduleGrid extends StatelessWidget {
               return cards;
             }(),
           ])),
-        ])),
       ]);
-    });
   }
 }
 
@@ -981,6 +1168,7 @@ class _CourseDetailSheet extends StatelessWidget {
           _CourseSection(course: courses[i]),
         ],
         const SizedBox(height: 8),
+
       ]),
     );
   }
@@ -1163,6 +1351,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           ),
         ]),
         const SizedBox(height: 8),
+
       ]),
     );
   }

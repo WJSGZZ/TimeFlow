@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F0E8"
+    android:orientation="vertical"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp">
+
+    <!-- 顶部：TimeFlow + 第N周 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="TimeFlow"
+            android:textColor="#CF6347"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/week_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="第1周"
+            android:textColor="#B0A89F"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- 日期标题行 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="7dp">
+        <TextView
+            android:id="@+id/today_header"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="今天"
+            android:textColor="#8C7B74"
+            android:textSize="10sp" />
+        <TextView
+            android:id="@+id/tomorrow_header"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="10dp"
+            android:text="明天"
+            android:textColor="#B0A89F"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- 内容区 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <!-- 今天 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginRight="5dp"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/today_course1"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/widget_course_card"
+                android:orientation="vertical"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:layout_marginBottom="4dp"
+                android:visibility="gone">
+                <TextView android:id="@+id/today_c1_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:gravity="top" />
+                <TextView android:id="@+id/today_c1_room"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#DDFFFFFF"
+                    android:textSize="8sp"
+                    android:layout_marginTop="2dp" />
+                <TextView android:id="@+id/today_c1_time"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#BBFFFFFF"
+                    android:textSize="8sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/today_course2"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/widget_course_card"
+                android:orientation="vertical"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:visibility="gone">
+                <TextView android:id="@+id/today_c2_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:gravity="top" />
+                <TextView android:id="@+id/today_c2_room"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#DDFFFFFF"
+                    android:textSize="8sp"
+                    android:layout_marginTop="2dp" />
+                <TextView android:id="@+id/today_c2_time"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#BBFFFFFF"
+                    android:textSize="8sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/today_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="赋闲"
+                android:textColor="#C8BFB8"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <!-- 分割线 -->
+        <TextView
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="#DDD6CE"
+            android:text=""
+            android:layout_marginRight="5dp" />
+
+        <!-- 明天 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/tomorrow_course1"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/widget_course_card"
+                android:orientation="vertical"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:layout_marginBottom="4dp"
+                android:visibility="gone">
+                <TextView android:id="@+id/tomorrow_c1_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:gravity="top" />
+                <TextView android:id="@+id/tomorrow_c1_room"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#DDFFFFFF"
+                    android:textSize="8sp"
+                    android:layout_marginTop="2dp" />
+                <TextView android:id="@+id/tomorrow_c1_time"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#BBFFFFFF"
+                    android:textSize="8sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tomorrow_course2"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="@drawable/widget_course_card"
+                android:orientation="vertical"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp"
+                android:visibility="gone">
+                <TextView android:id="@+id/tomorrow_c2_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:gravity="top" />
+                <TextView android:id="@+id/tomorrow_c2_room"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#DDFFFFFF"
+                    android:textSize="8sp"
+                    android:layout_marginTop="2dp" />
+                <TextView android:id="@+id/tomorrow_c2_time"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#BBFFFFFF"
+                    android:textSize="8sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tomorrow_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="赋闲"
+                android:textColor="#C8BFB8"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>
