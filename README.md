@@ -23,7 +23,7 @@
 <img src="screenshots/inform.png" width="200"/>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <img src="screenshots/overlap.png" width="200" />
-<p>首页 · 通知· 课程重叠</p>
+<p>首页 · 通知 · 课程重叠</p>
 
 </div>
 
