@@ -38,7 +38,7 @@
 
 <div align="center">
 
-<img src="screenshots/widget.png" width="200" />
+<img src="screenshots/widget.png" width="500" />
 <p>小组件</p>
 
 </div>
