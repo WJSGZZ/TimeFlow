@@ -17,6 +17,7 @@
 ## 界面展示
 
 <div align="center">
+
 <img src="screenshots/index.png" width="200"/>
 &nbsp;&nbsp;&nbsp;&nbsp;
 <img src="screenshots/inform.png" width="200"/>
@@ -27,4 +28,10 @@
 <p>首页·通知·冬·夏</p>
 
 </div>
+
 ## Logo设计
+
+<div align="center">
+<img src="logo.svg" width="300"/>
+<p>Logo</p>
+</div>
